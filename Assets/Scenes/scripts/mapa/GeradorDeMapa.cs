@@ -3,147 +3,117 @@ using System.Collections.Generic;
 
 public class GeradorDeMapa : MonoBehaviour
 {
-    // O Prefab da sua sala base (com o script Sala.cs anexado)
-    [SerializeField]
-    private GameObject prefabSalaBase;
+    [SerializeField] private GameObject prefabSalaBase;
+    [SerializeField] private int maxSalas = 15;
+    [Range(0f, 1f)] [SerializeField] private float chanceDeExpandir = 0.65f;
 
-    // Rastreia onde as salas já foram colocadas
-    private Dictionary<Vector2, Sala> salasGeradas = new Dictionary<Vector2, Sala>();
-
-    // Fila de salas para serem processadas (onde podemos adicionar novos vizinhos)
+    private Dictionary<Vector2Int, Sala> salasGeradas = new Dictionary<Vector2Int, Sala>();
     private Queue<Sala> salasParaExpandir = new Queue<Sala>();
+    private int contadorDeSalas = 0;
 
-    [Tooltip("O número máximo de salas a serem geradas.")]
-    [SerializeField]
-    private int maxSalas = 10;
-    
-    private int contadorDeSalas;
-
-    void Start()
+    private void Start()
     {
-        GerarMapaInicial();
+        GerarMapa();
     }
 
-    private void GerarMapaInicial()
+    private void GerarMapa()
     {
         if (prefabSalaBase == null)
         {
-            Debug.LogError("O Prefab da Sala não está definido!");
+            Debug.LogError("Prefab da sala não está atribuído!");
             return;
         }
 
-        // 1. Cria a primeira sala (no centro do mundo)
-        Sala primeiraSala = Instantiate(prefabSalaBase, Vector3.zero, Quaternion.identity, transform).GetComponent<Sala>();
-        primeiraSala.indiceDeGrade = Vector2.zero;
-        salasGeradas.Add(Vector2.zero, primeiraSala);
-        salasParaExpandir.Enqueue(primeiraSala);
-        contadorDeSalas = 1;
+        // Cria a primeira sala no centro
+        Sala primeira = CriarSala(Vector2Int.zero, Vector3.zero);
+        salasParaExpandir.Enqueue(primeira);
 
-        // 2. Continua gerando até atingir o limite
+        // Expande o mapa até o limite
         while (salasParaExpandir.Count > 0 && contadorDeSalas < maxSalas)
         {
-            Sala salaAtual = salasParaExpandir.Dequeue();
-            ExpandirSala(salaAtual);
+            Sala atual = salasParaExpandir.Dequeue();
+            Expandir(atual);
         }
 
-        Debug.Log("Geração de mapa concluída. Total de salas: " + contadorDeSalas);
+        Debug.Log($"Geração concluída: {contadorDeSalas} salas criadas.");
     }
 
-    private void ExpandirSala(Sala salaDeReferencia)
+    private Sala CriarSala(Vector2Int gradePos, Vector3 mundoPos)
     {
-        // Tenta gerar vizinhos em todas as 4 direções (Norte, Sul, Leste, Oeste)
-        foreach (var saida in salaDeReferencia.saidas)
-        {
-            if (!saida.estaConectada && contadorDeSalas < maxSalas)
-            {
-                Vector2 novaPosicaoGrade = Vector2.zero;
-                Vector3 offset = Vector3.zero;
-                
-                // Calcula o índice e o deslocamento da nova sala na grade
-                if (saida.direcao == "Norte")
-                {
-                    novaPosicaoGrade = salaDeReferencia.indiceDeGrade + new Vector2(0, 1);
-                    offset = new Vector3(0, 0, salaDeReferencia.tamanhoDaSala.y);
-                }
-                else if (saida.direcao == "Sul")
-                {
-                    novaPosicaoGrade = salaDeReferencia.indiceDeGrade + new Vector2(0, -1);
-                    offset = new Vector3(0, 0, -salaDeReferencia.tamanhoDaSala.y);
-                }
-                else if (saida.direcao == "Leste")
-                {
-                    novaPosicaoGrade = salaDeReferencia.indiceDeGrade + new Vector2(1, 0);
-                    offset = new Vector3(salaDeReferencia.tamanhoDaSala.x, 0, 0);
-                }
-                else if (saida.direcao == "Oeste")
-                {
-                    novaPosicaoGrade = salaDeReferencia.indiceDeGrade + new Vector2(-1, 0);
-                    offset = new Vector3(-salaDeReferencia.tamanhoDaSala.x, 0, 0);
-                }
-                
-                // 1. Verifica se a posição da grade já está ocupada
-                if (!salasGeradas.ContainsKey(novaPosicaoGrade))
-                {
-                    // 2. Gera a nova sala
-                    Vector3 novaPosicaoMundo = salaDeReferencia.transform.position + offset;
-                    Sala novaSala = Instantiate(prefabSalaBase, novaPosicaoMundo, Quaternion.identity, transform).GetComponent<Sala>();
-                    
-                    novaSala.indiceDeGrade = novaPosicaoGrade;
-                    salasGeradas.Add(novaPosicaoGrade, novaSala);
-                    salasParaExpandir.Enqueue(novaSala);
-                    contadorDeSalas++;
-                    
-                    // Lógica para marcar as portas como conectadas
-                    ConectarSalas(salaDeReferencia, saida.direcao, novaSala);
-                }
-                else
-                {
-                    // Se já existir uma sala vizinha, apenas conecta as portas
-                    Sala salaExistente = salasGeradas[novaPosicaoGrade];
-                    ConectarSalas(salaDeReferencia, saida.direcao, salaExistente);
-                }
-            }
-        }
+        GameObject obj = Instantiate(prefabSalaBase, mundoPos, Quaternion.identity, transform);
+        Sala nova = obj.GetComponent<Sala>();
+        nova.indiceDeGrade = gradePos;
+
+        salasGeradas.Add(gradePos, nova);
+        contadorDeSalas++;
+        return nova;
     }
 
-    // Marca as portas como conectadas (você implementaria a lógica visual/ativação aqui)
-    private void ConectarSalas(Sala sala1, string direcao1, Sala sala2)
+    private void Expandir(Sala sala)
     {
-        // Marca a saída da Sala 1 como conectada
-        for (int i = 0; i < sala1.saidas.Count; i++)
+        foreach (Direcao dir in System.Enum.GetValues(typeof(Direcao)))
         {
-            if (sala1.saidas[i].direcao == direcao1)
-            {
-                var temp = sala1.saidas[i];
-                temp.estaConectada = true;
-                sala1.saidas[i] = temp;
-                
-                // Exemplo: Destruir a parede/porta fechada no pontoDeConexao
-                // Destroy(temp.pontoDeConexao.GetComponentInChildren<Collider2D>().gameObject); 
+            if (contadorDeSalas >= maxSalas)
                 break;
-            }
-        }
-        
-        // Marca a saída da Sala 2 como conectada (na direção oposta)
-        string direcaoOposta = GetDirecaoOposta(direcao1);
-        for (int i = 0; i < sala2.saidas.Count; i++)
-        {
-            if (sala2.saidas[i].direcao == direcaoOposta)
+
+            if (Random.value > chanceDeExpandir)
+                continue;
+
+            Vector2Int novaGrade = sala.indiceDeGrade + DirecaoParaVetor(dir);
+            if (salasGeradas.ContainsKey(novaGrade))
             {
-                var temp = sala2.saidas[i];
-                temp.estaConectada = true;
-                sala2.saidas[i] = temp;
-                break;
+                ConectarSalas(sala, dir, salasGeradas[novaGrade]);
+                continue;
             }
+
+            Vector3 offset = DirecaoParaOffset(dir, sala.tamanhoDaSala);
+            Sala novaSala = CriarSala(novaGrade, sala.transform.position + offset);
+            ConectarSalas(sala, dir, novaSala);
+            salasParaExpandir.Enqueue(novaSala);
         }
     }
 
-    private string GetDirecaoOposta(string direcao)
+    private void ConectarSalas(Sala a, Direcao dir, Sala b)
     {
-        if (direcao == "Norte") return "Sul";
-        if (direcao == "Sul") return "Norte";
-        if (direcao == "Leste") return "Oeste";
-        if (direcao == "Oeste") return "Leste";
-        return "";
+        a.MarcarSaidaConectada(dir);
+        b.MarcarSaidaConectada(DirecaoOposta(dir));
+    }
+
+    private Vector2Int DirecaoParaVetor(Direcao dir)
+    {
+        return dir switch
+        {
+            Direcao.Norte => new Vector2Int(0, 1),
+            Direcao.Sul => new Vector2Int(0, -1),
+            Direcao.Leste => new Vector2Int(1, 0),
+            Direcao.Oeste => new Vector2Int(-1, 0),
+            _ => Vector2Int.zero
+        };
+    }
+
+    private Vector3 DirecaoParaOffset(Direcao dir, Vector2 tamanho)
+    {
+        return dir switch
+        {
+            Direcao.Norte => new Vector3(0, 0, tamanho.y),
+            Direcao.Sul => new Vector3(0, 0, -tamanho.y),
+            Direcao.Leste => new Vector3(tamanho.x, 0, 0),
+            Direcao.Oeste => new Vector3(-tamanho.x, 0, 0),
+            _ => Vector3.zero
+        };
+    }
+
+    private Direcao DirecaoOposta(Direcao dir)
+    {
+        return dir switch
+        {
+            Direcao.Norte => Direcao.Sul,
+            Direcao.Sul => Direcao.Norte,
+            Direcao.Leste => Direcao.Oeste,
+            Direcao.Oeste => Direcao.Leste,
+            _ => dir
+        };
     }
 }
+
+public enum Direcao { Norte, Sul, Leste, Oeste }
